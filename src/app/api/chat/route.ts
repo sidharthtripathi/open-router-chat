@@ -1,24 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
-import { supabaseServer } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 import { OPENROUTER_BASE, openRouterHeaders } from "@/lib/openrouter/client"
 import { truncateMessages } from "@/lib/utils"
 import { ALLOWED_MODELS } from "@/lib/constants"
-
-// Get the Supabase auth token from cookies
-async function getAuthUserId(req: NextRequest): Promise<string | null> {
-  const accessToken = req.cookies.get("sb-access-token")?.value
-  const refreshToken = req.cookies.get("sb-refresh-token")?.value
-
-  if (!accessToken && !refreshToken) return null
-
-  try {
-    const { data: { user }, error } = await supabaseServer.auth.getUser(accessToken ?? "")
-    if (error || !user) return null
-    return user.id
-  } catch {
-    return null
-  }
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,45 +16,31 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate model_id against allowlist
-    if (!ALLOWED_MODELS.includes(model_id)) {
+    if (!ALLOWED_MODELS.includes(model_id as typeof ALLOWED_MODELS[number])) {
       return NextResponse.json(
         { error: "Invalid model", code: "INVALID_MODEL" },
         { status: 400 }
       )
     }
 
+    const supabase = createClient()
+
     // For authenticated users, verify ownership of the chat
     if (!is_guest && chat_id) {
-      const userId = await getAuthUserId(req)
-      if (!userId) {
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
       }
 
       // Verify the chat belongs to this user
-      const { data: chat, error: chatError } = await supabaseServer
+      const { data: chat, error: chatError } = await supabase
         .from("chats")
         .select("user_id")
         .eq("id", chat_id)
         .single()
 
-      if (chatError || !chat || chat.user_id !== userId) {
-        return NextResponse.json({ error: "Chat not found" }, { status: 404 })
-      }
-    }
-
-    // For guests, require a guest_session_id in the chat to prevent unauthorized access
-    if (is_guest && chat_id) {
-      const { data: chat } = await supabaseServer
-        .from("chats")
-        .select("guest_session_id")
-        .eq("id", chat_id)
-        .single()
-
-      // Guests can only access their own guest sessions
-      // (The guest_session_id is stored in localStorage and passed implicitly)
-      // For now, we allow guest access to any chat with a guest_session_id
-      // This is inherently less secure — authenticated users should use proper accounts
-      if (!chat?.guest_session_id) {
+      if (chatError || !chat || chat.user_id !== user.id) {
         return NextResponse.json({ error: "Chat not found" }, { status: 404 })
       }
     }
@@ -79,7 +49,7 @@ export async function POST(req: NextRequest) {
 
     // For authenticated users, fetch full message history from DB
     if (!is_guest && chat_id) {
-      const { data: dbMessages } = await supabaseServer
+      const { data: dbMessages } = await supabase
         .from("messages")
         .select("role, content")
         .eq("chat_id", chat_id)
@@ -129,12 +99,12 @@ export async function POST(req: NextRequest) {
             if (data === "[DONE]") {
               // Save assistant message to DB only for authenticated users
               if (!is_guest && chat_id) {
-                const { count } = await supabaseServer
+                const { count } = await supabase
                   .from("messages")
                   .select("id", { count: "exact", head: true })
                   .eq("chat_id", chat_id)
 
-                await supabaseServer.from("messages").insert({
+                await supabase.from("messages").insert({
                   chat_id,
                   role: "assistant",
                   content: fullContent,
@@ -143,7 +113,7 @@ export async function POST(req: NextRequest) {
                 })
 
                 // Update chat model + timestamp
-                await supabaseServer
+                await supabase
                   .from("chats")
                   .update({ model_id, updated_at: new Date().toISOString() })
                   .eq("id", chat_id)

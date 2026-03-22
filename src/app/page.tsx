@@ -7,14 +7,12 @@ import { User } from "@supabase/supabase-js"
 import HomeView from "@/components/chat/HomeView"
 import Sidebar from "@/components/chat/Sidebar"
 import SearchModal from "@/components/chat/SearchModal"
-import { useChatList } from "@/hooks/useChatList"
 
 export default function Home() {
   const router = useRouter()
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false)
-  const { chats } = useChatList()
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -55,7 +53,6 @@ export default function Home() {
       <SearchModal
         isOpen={isSearchModalOpen}
         onClose={() => setIsSearchModalOpen(false)}
-        chats={chats}
       />
     </div>
   )

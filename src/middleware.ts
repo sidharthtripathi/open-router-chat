@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import { createServerClient } from "@supabase/ssr"
 
-// Public routes that don't require authentication
 const PUBLIC_ROUTES = [
   "/login",
+  "/auth/callback",
   "/signup",
-  "/p/",          // published chats are public
-  "/api/",        // API routes handle their own auth
+  "/p/",
   "/_next/",
   "/favicon.ico",
 ]
@@ -14,32 +14,45 @@ const PUBLIC_ROUTES = [
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // Allow public routes without auth check
+  // Allow public routes
   if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) {
     return NextResponse.next()
   }
 
-  // Root path is handled client-side
+  // Root path
   if (pathname === "/") {
     return NextResponse.next()
   }
 
-  // /chat/* routes are handled client-side but we still validate the session
-  // so we can set proper cache headers
+  // /chat/* routes — validate session but let client handle redirect
   if (pathname.startsWith("/chat")) {
-    // Check for Supabase auth cookies
-    const accessToken = req.cookies.get("sb-access-token")?.value
-    if (!accessToken) {
-      // No auth token — let client handle redirect to login
-      return NextResponse.next()
-    }
+    // Create a response and refresh the session
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return req.cookies.getAll()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              req.cookies.set(name, value)
+            })
+            const response = NextResponse.next()
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set(name, value, options)
+            })
+          },
+        },
+      }
+    )
 
-    // Validate the token by making a lightweight check
-    // We just pass through; real auth happens in API routes
+    await supabase.auth.getUser()
+
     return NextResponse.next()
   }
 
-  // Default: allow
   return NextResponse.next()
 }
 

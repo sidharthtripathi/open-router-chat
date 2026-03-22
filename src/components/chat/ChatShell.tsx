@@ -3,7 +3,6 @@
 import { useState } from "react"
 import Sidebar from "./Sidebar"
 import SearchModal from "./SearchModal"
-import { useChatList } from "@/hooks/useChatList"
 
 interface Props {
   children: React.ReactNode
@@ -12,7 +11,6 @@ interface Props {
 export default function ChatShell({ children }: Props) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false)
-  const { chats } = useChatList()
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -26,7 +24,6 @@ export default function ChatShell({ children }: Props) {
       <SearchModal
         isOpen={isSearchModalOpen}
         onClose={() => setIsSearchModalOpen(false)}
-        chats={chats}
       />
     </div>
   )

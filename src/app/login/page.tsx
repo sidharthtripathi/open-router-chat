@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { motion } from "framer-motion"
+import { setAuthCookies } from "@/lib/supabase/actions"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -24,11 +25,15 @@ export default function LoginPage() {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
         if (error) throw error
+        // Set auth cookies for server-side API routes
+        if (data.session) {
+          await setAuthCookies(data.session.access_token, data.session.refresh_token)
+        }
         router.push("/chat")
       } else {
         const { error } = await supabase.auth.signUp({
@@ -56,7 +61,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/chat`,
+          redirectTo: `${window.location.origin}/auth/callback`,
         },
       })
       if (error) throw error

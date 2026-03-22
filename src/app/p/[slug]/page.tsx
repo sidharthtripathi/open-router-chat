@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { supabaseServer } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import PublishedChatView from '@/components/published/PublishedChatView'
 
 interface Props {
@@ -7,7 +7,9 @@ interface Props {
 }
 
 export default async function PublishedPage({ params }: Props) {
-  const { data: published } = await supabaseServer
+  const supabase = createClient()
+
+  const { data: published } = await supabase
     .from('published_chats')
     .select('*')
     .eq('slug', params.slug)
@@ -16,12 +18,12 @@ export default async function PublishedPage({ params }: Props) {
   if (!published) notFound()
 
   // Increment view count
-  await supabaseServer
+  await supabase
     .from('published_chats')
     .update({ view_count: published.view_count + 1 })
     .eq('id', published.id)
 
-  const { data: messages } = await supabaseServer
+  const { data: messages } = await supabase
     .from('messages')
     .select('*')
     .eq('chat_id', published.chat_id)

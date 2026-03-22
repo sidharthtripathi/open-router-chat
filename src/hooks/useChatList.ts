@@ -1,66 +1,103 @@
-"use client";
+"use client"
 
-import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/lib/supabase/client";
-import { Chat } from "@/types";
+import { useEffect, useState, useCallback, useRef } from "react"
+import { supabase } from "@/lib/supabase/client"
+import { Chat } from "@/types"
 import {
   GUEST_SESSION_KEY,
   GUEST_MESSAGE_COUNT_KEY,
-  GUEST_MESSAGE_LIMIT,
-  DEFAULT_MODEL,
-} from "@/lib/constants";
+} from "@/lib/constants"
+
+const PAGE_SIZE = 20
 
 function getGuestSessionId(): string {
-  if (typeof window === "undefined") return "";
-  let id = localStorage.getItem(GUEST_SESSION_KEY);
+  if (typeof window === "undefined") return ""
+  let id = localStorage.getItem(GUEST_SESSION_KEY)
   if (!id) {
-    id = `guest-${crypto.randomUUID()}`;
-    localStorage.setItem(GUEST_SESSION_KEY, id);
+    id = `guest-${crypto.randomUUID()}`
+    localStorage.setItem(GUEST_SESSION_KEY, id)
   }
-  return id;
+  return id
 }
 
 export function useChatList() {
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [chats, setChats] = useState<Chat[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [creatingChat, setCreatingChat] = useState(false)
+  const cursorRef = useRef<string | null>(null)
 
   const fetchChats = useCallback(async () => {
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await supabase.auth.getUser()
 
-    // Only fetch chats for authenticated users
     if (!user) {
-      setChats([]);
-      setLoading(false);
-      return;
+      setChats([])
+      setLoading(false)
+      setHasMore(false)
+      return
     }
 
-    let query = supabase
+    setLoading(true)
+    const { data } = await supabase
       .from("chats")
       .select("*")
+      .eq("user_id", user.id)
       .order("is_pinned", { ascending: false })
       .order("updated_at", { ascending: false })
-      .eq("user_id", user.id);
+      .limit(PAGE_SIZE)
 
-    const { data } = await query;
-    setChats(data ?? []);
-    setLoading(false);
-  }, []);
+    const fetched = data ?? []
+    setChats(fetched)
+    setHasMore(fetched.length === PAGE_SIZE)
+    cursorRef.current =
+      fetched.length > 0 ? fetched[fetched.length - 1].updated_at : null
+    setLoading(false)
+  }, [])
+
+  const fetchMoreChats = useCallback(async () => {
+    if (loadingMore || !hasMore) return
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user || !cursorRef.current) return
+
+    setLoadingMore(true)
+    const { data } = await supabase
+      .from("chats")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("is_pinned", { ascending: false })
+      .order("updated_at", { ascending: false })
+      .lt("updated_at", cursorRef.current)
+      .limit(PAGE_SIZE)
+
+    const fetched = data ?? []
+    setChats((prev) => [...prev, ...fetched])
+    setHasMore(fetched.length === PAGE_SIZE)
+    cursorRef.current =
+      fetched.length > 0 ? fetched[fetched.length - 1].updated_at : null
+    setLoadingMore(false)
+  }, [loadingMore, hasMore])
 
   useEffect(() => {
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // Clear guest data on sign in (no migration)
+    } = supabase.auth.onAuthStateChange(async (event) => {
       if (event === "SIGNED_IN") {
-        localStorage.removeItem(GUEST_MESSAGE_COUNT_KEY);
-        localStorage.removeItem(GUEST_SESSION_KEY);
+        localStorage.removeItem(GUEST_MESSAGE_COUNT_KEY)
+        localStorage.removeItem(GUEST_SESSION_KEY)
       }
-      fetchChats();
-    });
+      if (event === "SIGNED_OUT") {
+        setChats([])
+        cursorRef.current = null
+      }
+      fetchChats()
+    })
 
-    fetchChats();
+    fetchChats()
 
     const channel = supabase
       .channel("chats-changes")
@@ -68,65 +105,84 @@ export function useChatList() {
         "postgres_changes",
         { event: "*", schema: "public", table: "chats" },
         () => {
-          fetchChats();
+          // Only refetch from start when chats change
+          fetchChats()
         },
       )
-      .subscribe();
+      .subscribe()
 
     return () => {
-      subscription.unsubscribe();
-      supabase.removeChannel(channel);
-    };
-  }, [fetchChats]);
+      subscription.unsubscribe()
+      supabase.removeChannel(channel)
+    }
+  }, [fetchChats])
 
   const createChat = async (): Promise<{
-    id: string | null;
-    error?: string;
+    id: string | null
+    error?: string
   }> => {
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await supabase.auth.getUser()
 
+    setCreatingChat(true)
     let guest_session_id: string | undefined
     if (!user) {
       guest_session_id = getGuestSessionId()
     }
 
-    const res = await fetch("/api/chat/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ guest_session_id }),
-    })
+    try {
+      const res = await fetch("/api/chat/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guest_session_id }),
+      })
 
-    if (!res.ok) {
+      if (!res.ok) {
+        const data = await res.json()
+        return { id: null, error: data.error ?? "Failed to create chat" }
+      }
+
       const data = await res.json()
-      return { id: null, error: data.error ?? "Failed to create chat" }
+      return { id: data.id }
+    } finally {
+      setCreatingChat(false)
     }
-
-    const data = await res.json()
-    return { id: data.id }
-  };
+  }
 
   const deleteChat = async (id: string) => {
-    await supabase.from("chats").delete().eq("id", id);
-  };
+    setChats((prev) => prev.filter((c) => c.id !== id))
+    await supabase.from("chats").delete().eq("id", id)
+  }
 
   const togglePin = async (id: string, is_pinned: boolean) => {
-    await supabase.from("chats").update({ is_pinned: !is_pinned }).eq("id", id);
-  };
+    setChats((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, is_pinned: !is_pinned } : c))
+    )
+    await supabase
+      .from("chats")
+      .update({ is_pinned: !is_pinned })
+      .eq("id", id)
+  }
 
   const renameChat = async (id: string, title: string) => {
-    await supabase.from("chats").update({ title }).eq("id", id);
-  };
+    setChats((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, title } : c))
+    )
+    await supabase.from("chats").update({ title }).eq("id", id)
+  }
 
   return {
     chats,
     loading,
+    loadingMore,
+    hasMore,
+    creatingChat,
+    fetchMoreChats,
     createChat,
     deleteChat,
     togglePin,
     renameChat,
     refetch: fetchChats,
-    GUEST_MESSAGE_LIMIT,
-  };
+  }
 }

@@ -1,30 +1,20 @@
 import { NextRequest, NextResponse } from "next/server"
-import { supabaseServer } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 import { DEFAULT_MODEL } from "@/lib/constants"
-
-async function getAuthUserId(req: NextRequest): Promise<string | null> {
-  const accessToken = req.cookies.get("sb-access-token")?.value
-  if (!accessToken) return null
-  try {
-    const { data: { user } } = await supabaseServer.auth.getUser(accessToken)
-    return user?.id ?? null
-  } catch {
-    return null
-  }
-}
 
 export async function POST(req: NextRequest) {
   try {
     const { guest_session_id } = await req.json()
 
-    const userId = await getAuthUserId(req)
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
 
     // If authenticated, create chat with user_id
-    if (userId) {
-      const { data, error } = await supabaseServer
+    if (user) {
+      const { data, error } = await supabase
         .from("chats")
         .insert({
-          user_id: userId,
+          user_id: user.id,
           model_id: DEFAULT_MODEL,
           title: null,
         })
@@ -42,7 +32,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid guest session" }, { status: 400 })
     }
 
-    const { data, error } = await supabaseServer
+    const { data, error } = await supabase
       .from("chats")
       .insert({
         guest_session_id,

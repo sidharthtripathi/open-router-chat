@@ -1,25 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import Groq from "groq-sdk"
-import { supabaseServer } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 
 const groq = new Groq()
-
-async function getAuthUserId(req: NextRequest): Promise<string | null> {
-  const accessToken = req.cookies.get("sb-access-token")?.value
-  if (!accessToken) return null
-  try {
-    const { data: { user } } = await supabaseServer.auth.getUser(accessToken)
-    return user?.id ?? null
-  } catch {
-    return null
-  }
-}
 
 export async function POST(req: NextRequest) {
   try {
     // Require authentication
-    const userId = await getAuthUserId(req)
-    if (!userId) {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 

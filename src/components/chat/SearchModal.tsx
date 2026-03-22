@@ -1,56 +1,88 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Search, ExternalLink } from "lucide-react"
-import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/skeleton"
 import { useRouter } from "next/navigation"
 
-interface ChatPreview {
+interface SearchResult {
   id: string
   title: string | null
   created_at: string
+  updated_at: string
+  snippet: string | null
 }
 
 interface Props {
   isOpen: boolean
   onClose: () => void
-  chats: ChatPreview[]
 }
 
-export default function SearchModal({ isOpen, onClose, chats }: Props) {
-  const [search, setSearch] = useState("")
+export default function SearchModal({ isOpen, onClose }: Props) {
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [loading, setLoading] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Reset state on open/close
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 100)
-    } else {
-      setSearch("")
+      setQuery("")
+      setResults([])
       setSelectedId(null)
+      setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [isOpen])
 
+  // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose()
-      // Optional cmd+k could be added here globally, but simple escape is enough for now inside modal
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [onClose])
 
-  const filtered = search
-    ? chats.filter((c) =>
-        c.title?.toLowerCase().includes(search.toLowerCase()),
-      )
-    : chats
+  // Debounced search
+  const doSearch = useCallback(async (q: string) => {
+    if (!q.trim()) {
+      setResults([])
+      setLoading(false)
+      return
+    }
 
-  const selectedChat = chats.find((c) => c.id === selectedId)
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ q: q.trim() })
+      const res = await fetch(`/api/chat/search?${params}`)
+      if (res.ok) {
+        const data = await res.json()
+        setResults(data.results ?? [])
+      }
+    } catch {
+      setResults([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const handleSearchChange = (value: string) => {
+    setQuery(value)
+    setSelectedId(null)
+
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      doSearch(value)
+    }, 300)
+  }
+
+  const selectedResult = results.find((r) => r.id === selectedId)
 
   return (
     <AnimatePresence>
@@ -78,11 +110,12 @@ export default function SearchModal({ isOpen, onClose, chats }: Props) {
               <Search className="h-5 w-5 text-muted-foreground mr-3" />
               <input
                 ref={inputRef}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search history..."
+                value={query}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="Search chats and messages..."
                 className="flex-1 bg-transparent border-none outline-none text-lg text-foreground placeholder:text-muted-foreground"
               />
+              {loading && <Spinner className="h-4 w-4 text-muted-foreground mr-2" />}
             </div>
 
             {/* Split Pane */}
@@ -90,32 +123,38 @@ export default function SearchModal({ isOpen, onClose, chats }: Props) {
               {/* Left sidebar: results */}
               <div className="w-full md:w-2/5 border-b md:border-b-0 md:border-r border-border/30 bg-[#111111] flex flex-col">
                 <ScrollArea className="flex-1 p-3">
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-3">
-                    History
-                  </h3>
-                  {filtered.length === 0 ? (
-                    <div className="text-sm text-muted-foreground px-3 py-4">
-                      No results found.
+                  {results.length === 0 && !loading && query.trim() ? (
+                    <div className="text-sm text-muted-foreground px-3 py-4 text-center">
+                      No results found
+                    </div>
+                  ) : results.length === 0 && !query.trim() ? (
+                    <div className="text-sm text-muted-foreground px-3 py-4 text-center">
+                      Type to search your chat history
                     </div>
                   ) : (
-                    filtered.map((chat) => (
+                    results.map((result) => (
                       <button
-                        key={chat.id}
-                        onClick={() => setSelectedId(chat.id)}
-                        className={`w-full text-left px-3 py-3 rounded-lg mb-1 transition-colors flex items-center justify-between group ${
-                          selectedId === chat.id
+                        key={result.id}
+                        onClick={() => setSelectedId(result.id)}
+                        className={`w-full text-left px-3 py-3 rounded-lg mb-1 transition-colors flex flex-col gap-0.5 ${
+                          selectedId === result.id
                             ? "bg-secondary text-foreground"
                             : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                         }`}
                       >
                         <span className="truncate text-sm font-medium pr-2">
-                          {chat.title || "Untitled Chat"}
+                          {result.title || "Untitled Chat"}
                         </span>
-                        <span className="text-xs opacity-50 shrink-0">
-                          {new Date(chat.created_at).toLocaleDateString(undefined, {
+                        {result.snippet && (
+                          <span className="text-xs opacity-60 truncate pr-2">
+                            {result.snippet}
+                          </span>
+                        )}
+                        <span className="text-xs opacity-40 shrink-0">
+                          {new Date(result.created_at).toLocaleDateString(undefined, {
                             month: "short",
                             day: "numeric",
-                            year: "numeric"
+                            year: "numeric",
                           })}
                         </span>
                       </button>
@@ -126,21 +165,23 @@ export default function SearchModal({ isOpen, onClose, chats }: Props) {
 
               {/* Right content: Preview */}
               <div className="w-full md:w-3/5 bg-[#0a0a0a] flex flex-col relative text-sm p-6">
-                {selectedChat ? (
+                {selectedResult ? (
                   <>
                     <h2 className="text-xl font-semibold mb-4 text-foreground/90">
-                      {selectedChat.title}
+                      {selectedResult.title || "Untitled Chat"}
                     </h2>
-                    <div className="text-muted-foreground space-y-4">
-                      <p>
-                        This is a preview pane. The exact messages could be fetched
-                        and displayed here, similar to the Grok mockups.
+                    {selectedResult.snippet && (
+                      <p className="text-muted-foreground mb-4 line-clamp-3">
+                        &ldquo;{selectedResult.snippet}&rdquo;
                       </p>
-                      <p>
-                        For now, this demonstrates the split-pane search UI with a
-                        blurred backdrop, matching the design request.
-                      </p>
-                    </div>
+                    )}
+                    <p className="text-muted-foreground text-xs">
+                      Created {new Date(selectedResult.created_at).toLocaleDateString(undefined, {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </p>
 
                     {/* Bottom Actions */}
                     <div className="absolute bottom-6 right-6 flex items-center gap-3">
@@ -148,17 +189,19 @@ export default function SearchModal({ isOpen, onClose, chats }: Props) {
                         variant="secondary"
                         onClick={() => {
                           onClose()
-                          router.push(`/chat/${selectedChat.id}`)
+                          router.push(`/chat/${selectedResult.id}`)
                         }}
                         className="bg-primary text-primary-foreground hover:bg-primary/90"
                       >
-                        Go <ExternalLink className="w-4 h-4 ml-2" />
+                        Open Chat <ExternalLink className="w-4 h-4 ml-2" />
                       </Button>
                     </div>
                   </>
                 ) : (
-                  <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                    Select a chat to view preview
+                  <div className="flex-1 flex items-center justify-center text-muted-foreground text-center px-4">
+                    {query.trim()
+                      ? "Select a chat to preview"
+                      : "Search your chat history by title or message content"}
                   </div>
                 )}
               </div>

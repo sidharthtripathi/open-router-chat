@@ -10,6 +10,7 @@ import { useModels } from "@/hooks/useModels"
 import ChatHeader from "@/components/chat/ChatHeader"
 import MessageThread from "@/components/chat/MessageThread"
 import InputArea from "@/components/chat/InputArea"
+import { ChatPageSkeleton } from "@/components/ui/skeleton"
 import { Chat } from "@/types"
 import { User } from "@supabase/supabase-js"
 import { GUEST_MESSAGE_LIMIT } from "@/lib/constants"
@@ -18,6 +19,7 @@ export default function ChatPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [chat, setChat] = useState<Chat | null>(null)
+  const [chatLoading, setChatLoading] = useState(true)
   const [user, setUser] = useState<User | null>(null)
   const { models } = useModels()
   const { deleteChat, renameChat } = useChatList()
@@ -44,12 +46,16 @@ export default function ChatPage() {
       setUser(data.user)
     })
 
+    setChatLoading(true)
     supabase
       .from("chats")
       .select("*")
       .eq("id", id)
       .single()
-      .then(({ data }) => setChat(data))
+      .then(({ data }) => {
+        setChat(data)
+        setChatLoading(false)
+      })
 
     const channel = supabase
       .channel(`chat-${id}`)
@@ -128,6 +134,10 @@ export default function ChatPage() {
     0,
     GUEST_MESSAGE_LIMIT - guestMessageCount,
   )
+
+  if (chatLoading) {
+    return <ChatPageSkeleton />
+  }
 
   return (
     <div className="flex flex-col h-full bg-background">

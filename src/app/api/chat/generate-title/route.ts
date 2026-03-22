@@ -1,19 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
-import { supabaseServer } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 import { OPENROUTER_BASE, openRouterHeaders } from "@/lib/openrouter/client"
 
 const MAX_TITLE_INPUT_LENGTH = 2000
-
-async function getAuthUserId(req: NextRequest): Promise<string | null> {
-  const accessToken = req.cookies.get("sb-access-token")?.value
-  if (!accessToken) return null
-  try {
-    const { data: { user } } = await supabaseServer.auth.getUser(accessToken)
-    return user?.id ?? null
-  } catch {
-    return null
-  }
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,20 +30,33 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    const supabase = createClient()
+
     // Authenticate the request
-    const userId = await getAuthUserId(req)
-    if (!userId) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    // Check if title already exists — if so, return it without regenerating
+    const { data: existingChat } = await supabase
+      .from("chats")
+      .select("title")
+      .eq("id", chat_id)
+      .single()
+
+    if (existingChat?.title && existingChat.title.trim()) {
+      return NextResponse.json({ title: existingChat.title, cached: true })
+    }
+
     // Verify ownership of the chat
-    const { data: chat, error: chatError } = await supabaseServer
+    const { data: chat, error: chatError } = await supabase
       .from("chats")
       .select("user_id")
       .eq("id", chat_id)
       .single()
 
-    if (chatError || !chat || chat.user_id !== userId) {
+    if (chatError || !chat || chat.user_id !== user.id) {
       return NextResponse.json({ error: "Chat not found" }, { status: 404 })
     }
 
@@ -90,7 +92,7 @@ export async function POST(req: NextRequest) {
     const title = data.choices[0].message.content.trim().slice(0, 100) || "New Chat"
 
     // Update the chat with the generated title
-    const { error: updateError } = await supabaseServer
+    const { error: updateError } = await supabase
       .from("chats")
       .update({ title })
       .eq("id", chat_id)

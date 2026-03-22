@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useChatList } from "@/hooks/useChatList"
 import { groupChatsByDate } from "@/lib/utils"
@@ -10,6 +10,7 @@ import { User } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { ChatListSkeleton, Spinner } from "@/components/ui/skeleton"
 import {
   Search,
   Plus,
@@ -17,7 +18,7 @@ import {
   LogIn,
   PanelLeft,
 } from "lucide-react"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 
 const COLLAPSED_WIDTH = 64
 const EXPANDED_WIDTH = 260
@@ -31,10 +32,11 @@ interface SidebarProps {
 export default function Sidebar({ collapsed, onToggle, onOpenSearch }: SidebarProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const { chats, createChat, deleteChat, togglePin, renameChat } =
+  const { chats, loading, loadingMore, hasMore, creatingChat, fetchMoreChats, createChat, deleteChat, togglePin, renameChat } =
     useChatList()
   const [user, setUser] = useState<User | null>(null)
   const [guestLimitError, setGuestLimitError] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user))
@@ -48,6 +50,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSearch }: SidebarPr
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
+    await fetch("/api/auth/logout", { method: "POST" })
     router.push("/login")
   }
 
@@ -72,6 +75,21 @@ export default function Sidebar({ collapsed, onToggle, onOpenSearch }: SidebarPr
   const unpinnedChats = chats.filter((c) => !c.is_pinned)
 
   const grouped = groupChatsByDate(unpinnedChats)
+
+  // Infinite scroll using IntersectionObserver
+  const loadMoreRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          fetchMoreChats()
+        }
+      },
+      { threshold: 0.1 }
+    )
+    if (loadMoreRef.current) observer.observe(loadMoreRef.current)
+    return () => observer.disconnect()
+  }, [hasMore, loadingMore, fetchMoreChats])
 
   return (
     <motion.aside
@@ -135,58 +153,76 @@ export default function Sidebar({ collapsed, onToggle, onOpenSearch }: SidebarPr
             <div className="px-3 pb-2">
               <button
                 onClick={handleNewChat}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-foreground bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
+                disabled={creatingChat}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-foreground bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors disabled:opacity-50"
                 style={{ justifyContent: "flex-start" }}
               >
-                <Plus className="h-4 w-4 shrink-0" />
-                <span>New Chat</span>
+                {creatingChat ? (
+                  <Spinner className="h-4 w-4" />
+                ) : (
+                  <Plus className="h-4 w-4 shrink-0" />
+                )}
+                <span>{creatingChat ? "Creating..." : "New Chat"}</span>
               </button>
             </div>
 
             {/* Chat list */}
-            <ScrollArea className="flex-1 px-2 pb-4">
-              {/* Pinned */}
-              {pinnedChats.length > 0 && (
-                <div className="mb-3">
-                  <p className="text-xs font-semibold text-muted-foreground px-2 py-1 uppercase tracking-wide">
-                    Pinned
-                  </p>
-                  {pinnedChats.map((chat) => (
-                    <ChatItem
-                      key={chat.id}
-                      chat={chat}
-                      active={chat.id === activeChatId}
-                      onDelete={handleDelete}
-                      onTogglePin={togglePin}
-                      onRename={renameChat}
-                    />
-                  ))}
-                </div>
-              )}
+            <ScrollArea className="flex-1 px-2 pb-4" ref={scrollRef}>
+              {loading ? (
+                <ChatListSkeleton />
+              ) : (
+                <>
+                  {/* Pinned */}
+                  {pinnedChats.length > 0 && (
+                    <div className="mb-3">
+                      <p className="text-xs font-semibold text-muted-foreground px-2 py-1 uppercase tracking-wide">
+                        Pinned
+                      </p>
+                      {pinnedChats.map((chat) => (
+                        <ChatItem
+                          key={chat.id}
+                          chat={chat}
+                          active={chat.id === activeChatId}
+                          onDelete={handleDelete}
+                          onTogglePin={togglePin}
+                          onRename={renameChat}
+                        />
+                      ))}
+                    </div>
+                  )}
 
-              {/* Grouped recent */}
-              {Object.entries(grouped).map(([label, groupChats]) => (
-                <div key={label} className="mb-3">
-                  <p className="text-xs font-semibold text-muted-foreground px-2 py-1 uppercase tracking-wide">
-                    {label}
-                  </p>
-                  {groupChats.map((chat) => (
-                    <ChatItem
-                      key={chat.id}
-                      chat={chat}
-                      active={chat.id === activeChatId}
-                      onDelete={handleDelete}
-                      onTogglePin={togglePin}
-                      onRename={renameChat}
-                    />
+                  {/* Grouped recent */}
+                  {Object.entries(grouped).map(([label, groupChats]) => (
+                    <div key={label} className="mb-3">
+                      <p className="text-xs font-semibold text-muted-foreground px-2 py-1 uppercase tracking-wide">
+                        {label}
+                      </p>
+                      {groupChats.map((chat) => (
+                        <ChatItem
+                          key={chat.id}
+                          chat={chat}
+                          active={chat.id === activeChatId}
+                          onDelete={handleDelete}
+                          onTogglePin={togglePin}
+                          onRename={renameChat}
+                        />
+                      ))}
+                    </div>
                   ))}
-                </div>
-              ))}
 
-              {chats.length === 0 && (
-                <p className="text-xs text-muted-foreground px-3 py-4 text-center">
-                  No chats yet
-                </p>
+                  {chats.length === 0 && (
+                    <p className="text-xs text-muted-foreground px-3 py-4 text-center">
+                      No chats yet
+                    </p>
+                  )}
+
+                  {/* Infinite scroll sentinel */}
+                  {hasMore && (
+                    <div ref={loadMoreRef} className="flex justify-center py-3">
+                      {loadingMore && <Spinner className="h-4 w-4 text-muted-foreground" />}
+                    </div>
+                  )}
+                </>
               )}
             </ScrollArea>
 
