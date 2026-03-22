@@ -65,14 +65,20 @@ export default function Message({
               isUser ? "justify-end" : "justify-start"
             )}
           >
-            {message.image_urls.map((url, i) => (
-              <img
-                key={i}
-                src={url}
-                alt=""
-                className="max-w-[200px] rounded-xl border border-border"
-              />
-            ))}
+            {message.image_urls.map((url, i) => {
+              // Validate image URL — only allow https:// from trusted CDN domains
+              const isAllowedUrl = /^https:\/\/[^/]+\.supabase\.co\//.test(url)
+              if (!isAllowedUrl) return null
+              return (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={i}
+                  src={url}
+                  alt=""
+                  className="max-w-[200px] rounded-xl border border-border"
+                />
+              )
+            })}
           </div>
         )}
 

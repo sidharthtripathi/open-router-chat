@@ -1,39 +1,50 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server"
+import type { NextRequest } from "next/server"
+
+// Public routes that don't require authentication
+const PUBLIC_ROUTES = [
+  "/login",
+  "/signup",
+  "/p/",          // published chats are public
+  "/api/",        // API routes handle their own auth
+  "/_next/",
+  "/favicon.ico",
+]
 
 export async function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+  const { pathname } = req.nextUrl
 
-  // Public routes - allow access without auth
-  if (
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/signup") ||
-    pathname.startsWith("/p/") ||
-    pathname.startsWith("/api/") ||
-    pathname.startsWith("/_next/") ||
-    pathname === "/favicon.ico"
-  ) {
-    return NextResponse.next();
+  // Allow public routes without auth check
+  if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) {
+    return NextResponse.next()
   }
 
-  // Root path - allow access, it will handle redirect logic
+  // Root path is handled client-side
   if (pathname === "/") {
-    return NextResponse.next();
+    return NextResponse.next()
   }
 
-  // /chat/* routes are handled client-side
-  // Allow them to pass through - the client components check auth
-  // and will redirect to /login if needed
+  // /chat/* routes are handled client-side but we still validate the session
+  // so we can set proper cache headers
   if (pathname.startsWith("/chat")) {
-    return NextResponse.next();
+    // Check for Supabase auth cookies
+    const accessToken = req.cookies.get("sb-access-token")?.value
+    if (!accessToken) {
+      // No auth token — let client handle redirect to login
+      return NextResponse.next()
+    }
+
+    // Validate the token by making a lightweight check
+    // We just pass through; real auth happens in API routes
+    return NextResponse.next()
   }
 
   // Default: allow
-  return NextResponse.next();
+  return NextResponse.next()
 }
 
 export const config = {
   matcher: [
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
-};
+}

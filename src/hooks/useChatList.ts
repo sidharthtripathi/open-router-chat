@@ -87,29 +87,24 @@ export function useChatList() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    const chatData: Record<string, unknown> = {
-      model_id: DEFAULT_MODEL,
-      title: null,
-    };
-
-    if (user) {
-      chatData.user_id = user.id;
-    } else {
-      // Guests create chat with session ID
-      chatData.guest_session_id = getGuestSessionId();
+    let guest_session_id: string | undefined
+    if (!user) {
+      guest_session_id = getGuestSessionId()
     }
 
-    const { data, error } = await supabase
-      .from("chats")
-      .insert(chatData)
-      .select()
-      .single();
+    const res = await fetch("/api/chat/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ guest_session_id }),
+    })
 
-    if (error) {
-      console.error("Error creating chat:", error);
-      return { id: null, error: error.message };
+    if (!res.ok) {
+      const data = await res.json()
+      return { id: null, error: data.error ?? "Failed to create chat" }
     }
-    return { id: data.id };
+
+    const data = await res.json()
+    return { id: data.id }
   };
 
   const deleteChat = async (id: string) => {
