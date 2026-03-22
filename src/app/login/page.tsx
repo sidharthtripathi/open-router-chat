@@ -1,30 +1,35 @@
-"use client";
+"use client"
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase/client";
+import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabase/client"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Separator } from "@/components/ui/separator"
+import { ThemeToggle } from "@/components/ThemeToggle"
+import { motion } from "framer-motion"
 
 export default function LoginPage() {
-  const router = useRouter();
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const router = useRouter()
+  const [isLogin, setIsLogin] = useState(true)
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
+    e.preventDefault()
+    setLoading(true)
+    setError("")
 
     try {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
-        });
-        if (error) throw error;
-        router.push("/chat");
+        })
+        if (error) throw error
+        router.push("/chat")
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -32,21 +37,20 @@ export default function LoginPage() {
           options: {
             emailRedirectTo: `${window.location.origin}/chat`,
           },
-        });
-        if (error) throw error;
+        })
+        if (error) throw error
         setError(
           "Signup successful! Please check your email to confirm your account.",
-        );
-        setIsLogin(true);
+        )
+        setIsLogin(true)
       }
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  // Google OAuth - automatically signs in if user exists, or creates account + signs in if not
   const handleGoogleLogin = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -54,34 +58,49 @@ export default function LoginPage() {
         options: {
           redirectTo: `${window.location.origin}/chat`,
         },
-      });
-      if (error) throw error;
+      })
+      if (error) throw error
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message)
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F9F9F8]">
-      <div className="w-full max-w-md p-8 bg-white rounded-xl shadow-lg border border-[#E5E5E5]">
-        <h1 className="text-2xl font-bold text-center text-[#0D0D0D] mb-6">
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="w-full max-w-md p-8 bg-card rounded-xl shadow-lg border border-border"
+      >
+        <h1 className="text-2xl font-bold text-center mb-6">
           {isLogin ? "Welcome Back" : "Create an Account"}
         </h1>
 
         {error && (
-          <div
-            className={`p-3 rounded-md mb-4 text-sm ${error.includes("successful") ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`p-3 rounded-md mb-4 text-sm ${
+              error.includes("successful")
+                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                : "bg-destructive/10 text-destructive"
+            }`}
           >
             {error}
-          </div>
+          </motion.div>
         )}
 
-        <button
+        <Button
           onClick={handleGoogleLogin}
-          type="button"
-          className="w-full mb-4 flex items-center justify-center gap-2 py-2 border border-[#E5E5E5] text-[#0D0D0D] font-medium rounded-lg hover:bg-gray-50 transition-colors"
+          variant="outline"
+          className="w-full mb-4"
         >
-          <svg className="w-5 h-5" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
             <path
               d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
               fill="#4285F4"
@@ -100,14 +119,14 @@ export default function LoginPage() {
             />
           </svg>
           Continue with Google
-        </button>
+        </Button>
 
         <div className="relative mb-4">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-[#E5E5E5]"></div>
+            <Separator className="w-full" />
           </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-white text-[#6B6B6B]">
+          <div className="relative flex justify-center text-xs">
+            <span className="px-2 bg-card text-muted-foreground">
               Or continue with email
             </span>
           </div>
@@ -115,51 +134,42 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-[#6B6B6B] mb-1">
-              Email
-            </label>
-            <input
+            <label className="block text-sm font-medium mb-1">Email</label>
+            <Input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 border border-[#E5E5E5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D0D0D]"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[#6B6B6B] mb-1">
-              Password
-            </label>
-            <input
+            <label className="block text-sm font-medium mb-1">Password</label>
+            <Input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 border border-[#E5E5E5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D0D0D]"
               required
             />
           </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2 bg-[#0D0D0D] text-white rounded-lg hover:bg-black transition-colors disabled:opacity-50"
-          >
+          <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Processing..." : isLogin ? "Sign In" : "Sign Up"}
-          </button>
+          </Button>
         </form>
 
-        <p className="mt-4 text-center text-sm text-[#6B6B6B]">
+        <p className="mt-4 text-center text-sm text-muted-foreground">
           {isLogin ? "Don't have an account? " : "Already have an account? "}
-          <button
+          <Button
+            variant="link"
+            className="p-0 h-auto text-primary"
             onClick={() => {
-              setIsLogin(!isLogin);
-              setError("");
+              setIsLogin(!isLogin)
+              setError("")
             }}
-            className="text-[#0D0D0D] font-medium hover:underline"
           >
             {isLogin ? "Sign up" : "Sign in"}
-          </button>
+          </Button>
         </p>
-      </div>
+      </motion.div>
     </div>
-  );
+  )
 }

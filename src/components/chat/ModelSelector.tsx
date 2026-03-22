@@ -1,8 +1,20 @@
-'use client'
+"use client"
 
-import { useState } from 'react'
-import { useModels } from '@/hooks/useModels'
-import { Model } from '@/types'
+import { useState, useRef, useEffect } from "react"
+import { useModels } from "@/hooks/useModels"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Badge } from "@/components/ui/badge"
+import { ChevronDown, Eye } from "lucide-react"
 
 interface Props {
   value: string
@@ -11,84 +23,144 @@ interface Props {
 
 export default function ModelSelector({ value, onChange }: Props) {
   const { grouped, loading } = useModels()
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
 
   const allModels = [
-    ...grouped.frontier.map(m => ({ ...m, group: 'Frontier' })),
-    ...grouped.fast.map(m => ({ ...m, group: 'Fast' })),
-    ...grouped.vision.map(m => ({ ...m, group: 'Vision' })),
+    ...grouped.frontier.map((m) => ({ ...m, group: "Frontier" })),
+    ...grouped.fast.map((m) => ({ ...m, group: "Fast" })),
+    ...grouped.vision.map((m) => ({ ...m, group: "Vision" })),
   ]
 
-  const filtered = allModels.filter(m =>
-    m.name.toLowerCase().includes(search.toLowerCase()) ||
-    m.id.toLowerCase().includes(search.toLowerCase())
-  )
+  const current = allModels.find((m) => m.id === value)
 
-  const current = allModels.find(m => m.id === value)
+  const [search, setSearch] = useState("")
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Filter models by search
+  const filteredModels = search.trim()
+    ? allModels.filter((m) =>
+        m.name.toLowerCase().includes(search.toLowerCase()),
+      )
+    : allModels
+
+  // Reset highlight when search changes
+  useEffect(() => {
+    setHighlightedIndex(0)
+  }, [search])
+
+  // Keyboard navigation
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!filteredModels.length) return
+    if (e.key === "ArrowDown") {
+      e.preventDefault()
+      setHighlightedIndex((i) => Math.min(i + 1, filteredModels.length - 1))
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault()
+      setHighlightedIndex((i) => Math.max(i - 1, 0))
+    } else if (e.key === "Enter" && filteredModels[highlightedIndex]) {
+      e.preventDefault()
+      onChange(filteredModels[highlightedIndex].id)
+      setSearch("")
+      inputRef.current?.blur()
+    }
+  }
+
+  const handleSelect = (modelId: string) => {
+    onChange(modelId)
+    setSearch("")
+  }
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 px-3 py-1.5 text-sm border border-[#E5E5E5] rounded-lg hover:bg-gray-50 transition-colors"
-      >
-        <span className="max-w-[160px] truncate text-[#0D0D0D]">
-          {current?.name ?? value}
-        </span>
-        <svg className="w-4 h-4 text-[#6B6B6B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {open && (
-        <div className="absolute top-full mt-1 right-0 w-80 bg-white border border-[#E5E5E5] rounded-xl shadow-lg z-50">
-          <div className="p-2 border-b border-[#E5E5E5]">
-            <input
-              autoFocus
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search models..."
-              className="w-full px-3 py-1.5 text-sm bg-gray-50 rounded-lg outline-none"
-            />
-          </div>
-
-          <div className="max-h-72 overflow-y-auto">
-            {loading && (
-              <p className="text-sm text-[#6B6B6B] p-4 text-center">Loading models...</p>
-            )}
-
-            {['Frontier', 'Fast', 'Vision'].map(group => {
-              const items = filtered.filter((m: any) => m.group === group)
-              if (!items.length) return null
-              return (
-                <div key={group}>
-                  <p className="text-xs font-semibold text-[#6B6B6B] px-3 pt-2 pb-1 uppercase tracking-wide">
-                    {group}
-                  </p>
-                  {items.map((m: any) => (
-                    <button
-                      key={m.id}
-                      onClick={() => { onChange(m.id); setOpen(false); setSearch('') }}
-                      className={`w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between ${m.id === value ? 'bg-gray-100' : ''}`}
-                    >
-                      <div>
-                        <p className="text-sm text-[#0D0D0D]">{m.name}</p>
-                        <p className="text-xs text-[#6B6B6B]">{(m.context_length / 1000).toFixed(0)}k ctx</p>
-                      </div>
-                      {group === 'Vision' && <span className="text-sm">👁</span>}
-                    </button>
-                  ))}
-                </div>
-              )
-            })}
-          </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-2">
+          <span className="max-w-[120px] truncate">{current?.name ?? value}</span>
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-80">
+        <div className="p-2">
+          <Input
+            ref={inputRef}
+            placeholder="Search models..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="h-8"
+          />
         </div>
-      )}
+        <DropdownMenuSeparator />
 
-      {open && (
-        <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-      )}
-    </div>
+        {loading && (
+          <div className="p-4 text-center text-sm text-muted-foreground">
+            Loading models...
+          </div>
+        )}
+
+        {!loading && filteredModels.length === 0 && (
+          <div className="p-4 text-center text-sm text-muted-foreground">
+            No models found
+          </div>
+        )}
+
+        {!loading && filteredModels.length > 0 && (() => {
+          // When searching, flatten into single group
+          if (search.trim()) {
+            return (
+              <ScrollArea className="max-h-80">
+                {filteredModels.map((m, i) => (
+                  <DropdownMenuItem
+                    key={m.id}
+                    onClick={() => handleSelect(m.id)}
+                    className={`gap-2 cursor-pointer ${i === highlightedIndex ? "bg-accent" : ""}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate">{m.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(m.context_length / 1000).toFixed(0)}k ctx
+                      </p>
+                    </div>
+                    {m.group === "Vision" && (
+                      <Eye className="h-4 w-4 text-muted-foreground shrink-0" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </ScrollArea>
+            )
+          }
+
+          // Normal grouped view
+          return (["Frontier", "Fast", "Vision"] as const).map((group) => {
+            const items = filteredModels.filter((m) => m.group === group)
+            if (!items.length) return null
+            return (
+              <div key={group}>
+                <DropdownMenuLabel className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {group}
+                </DropdownMenuLabel>
+                {items.map((m, i) => (
+                  <DropdownMenuItem
+                    key={m.id}
+                    onClick={() => handleSelect(m.id)}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate">{m.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(m.context_length / 1000).toFixed(0)}k ctx
+                      </p>
+                    </div>
+                    {group === "Vision" && (
+                      <Eye className="h-4 w-4 text-muted-foreground shrink-0" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+              </div>
+            )
+          })
+        })()}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

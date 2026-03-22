@@ -1,40 +1,38 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase/client";
+import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabase/client"
+import { Button } from "@/components/ui/button"
+import { GitFork } from "lucide-react"
 
 interface Props {
-  publishedChatId: string;
+  publishedChatId: string
 }
 
 export default function ForkButton({ publishedChatId }: Props) {
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const router = useRouter()
+  const [loading, setLoading] = useState(false)
 
   const handleFork = async () => {
-    setLoading(true);
+    setLoading(true)
 
-    // Get current user (if logged in)
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await supabase.auth.getUser()
 
-    // Fetch original messages
     const { data: messages } = await supabase
       .from("messages")
       .select("*")
       .eq("chat_id", publishedChatId)
-      .order("message_index", { ascending: true });
+      .order("message_index", { ascending: true })
 
-    // Get original chat info
     const { data: originalChat } = await supabase
       .from("chats")
       .select("*")
       .eq("id", publishedChatId)
-      .single();
+      .single()
 
-    // Create new forked chat with user_id if logged in
     const { data: newChat, error } = await supabase
       .from("chats")
       .insert({
@@ -45,14 +43,13 @@ export default function ForkButton({ publishedChatId }: Props) {
         forked_at_message_index: messages?.length ?? 0,
       })
       .select()
-      .single();
+      .single()
 
     if (error || !newChat) {
-      setLoading(false);
-      return;
+      setLoading(false)
+      return
     }
 
-    // Bulk insert messages into new chat
     if (messages && messages.length > 0) {
       await supabase.from("messages").insert(
         messages.map((m) => ({
@@ -63,20 +60,17 @@ export default function ForkButton({ publishedChatId }: Props) {
           image_urls: m.image_urls,
           message_index: m.message_index,
         })),
-      );
+      )
     }
 
-    router.push(`/chat/${newChat.id}`);
-    setLoading(false);
-  };
+    router.push(`/chat/${newChat.id}`)
+    setLoading(false)
+  }
 
   return (
-    <button
-      onClick={handleFork}
-      disabled={loading}
-      className="px-4 py-1.5 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
-    >
-      {loading ? "Forking..." : "Continue this chat →"}
-    </button>
-  );
+    <Button onClick={handleFork} disabled={loading} size="sm" variant="default">
+      <GitFork className="h-4 w-4 mr-1" />
+      {loading ? "Forking..." : "Continue this chat"}
+    </Button>
+  )
 }

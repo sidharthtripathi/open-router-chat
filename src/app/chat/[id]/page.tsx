@@ -1,28 +1,28 @@
-"use client";
+"use client"
 
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase/client";
-import { useChat } from "@/hooks/useChat";
-import { useChatList } from "@/hooks/useChatList";
-import { isVisionCapable } from "@/lib/openrouter/models";
-import { useModels } from "@/hooks/useModels";
-import ChatHeader from "@/components/chat/ChatHeader";
-import MessageThread from "@/components/chat/MessageThread";
-import InputArea from "@/components/chat/InputArea";
-import { Chat } from "@/types";
-import { User } from "@supabase/supabase-js";
-import { GUEST_MESSAGE_LIMIT } from "@/lib/constants";
+import { useParams, useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
+import { supabase } from "@/lib/supabase/client"
+import { useChat } from "@/hooks/useChat"
+import { useChatList } from "@/hooks/useChatList"
+import { isVisionCapable } from "@/lib/openrouter/models"
+import { useModels } from "@/hooks/useModels"
+import ChatHeader from "@/components/chat/ChatHeader"
+import MessageThread from "@/components/chat/MessageThread"
+import InputArea from "@/components/chat/InputArea"
+import { Chat } from "@/types"
+import { User } from "@supabase/supabase-js"
+import { GUEST_MESSAGE_LIMIT } from "@/lib/constants"
 
 export default function ChatPage() {
-  const { id } = useParams<{ id: string }>();
-  const router = useRouter();
-  const [chat, setChat] = useState<Chat | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const { models } = useModels();
-  const { deleteChat, renameChat } = useChatList();
-  const [guestMessageCount, setGuestMessageCount] = useState(0);
-  const [streamStarted, setStreamStarted] = useState(false);
+  const { id } = useParams<{ id: string }>()
+  const router = useRouter()
+  const [chat, setChat] = useState<Chat | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const { models } = useModels()
+  const { deleteChat, renameChat } = useChatList()
+  const [guestMessageCount, setGuestMessageCount] = useState(0)
+  const [streamStarted, setStreamStarted] = useState(false)
 
   const {
     messages,
@@ -35,24 +35,22 @@ export default function ChatPage() {
     stopStreaming,
     editMessage,
     startStreamingForExistingMessages,
-  } = useChat(id, chat?.model_id ?? "openai/gpt-4o-mini");
+  } = useChat(id, chat?.model_id ?? "openai/gpt-4o-mini")
 
-  // Check auth and load chat
   useEffect(() => {
-    if (!id) return;
+    if (!id) return
 
     supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-    });
+      setUser(data.user)
+    })
 
     supabase
       .from("chats")
       .select("*")
       .eq("id", id)
       .single()
-      .then(({ data }) => setChat(data));
+      .then(({ data }) => setChat(data))
 
-    // Realtime title updates
     const channel = supabase
       .channel(`chat-${id}`)
       .on(
@@ -64,79 +62,75 @@ export default function ChatPage() {
           filter: `id=eq.${id}`,
         },
         (payload) => {
-          setChat(payload.new as Chat);
+          setChat(payload.new as Chat)
         },
       )
-      .subscribe();
+      .subscribe()
 
-    // Load guest message count
     if (typeof window !== "undefined") {
       const count = parseInt(
         localStorage.getItem("guest_message_count") || "0",
         10,
-      );
-      setGuestMessageCount(count);
+      )
+      setGuestMessageCount(count)
     }
 
     return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [id]);
+      supabase.removeChannel(channel)
+    }
+  }, [id])
 
-  // Update chat title when generated
   useEffect(() => {
     if (generatedTitle && chat && chat.title !== generatedTitle) {
-      setChat({ ...chat, title: generatedTitle });
+      setChat({ ...chat, title: generatedTitle })
     }
-  }, [generatedTitle, chat]);
+  }, [generatedTitle, chat])
 
-  // Auto-start streaming when there's a user message without assistant response
   useEffect(() => {
-    if (streamStarted || messages.length === 0 || !id) return;
+    if (streamStarted || messages.length === 0 || !id) return
 
-    const lastMsg = messages[messages.length - 1];
+    const lastMsg = messages[messages.length - 1]
     if (lastMsg.role === "user" && !streaming) {
-      setStreamStarted(true);
-      startStreamingForExistingMessages();
+      setStreamStarted(true)
+      startStreamingForExistingMessages()
     }
-  }, [messages, streaming, id, streamStarted, startStreamingForExistingMessages]);
+  }, [messages, streaming, id, streamStarted, startStreamingForExistingMessages])
 
   const visionCapable = models.some(
     (m) => m.id === model && isVisionCapable(m),
-  );
+  )
 
   const handleDelete = async () => {
-    await deleteChat(id);
-    router.push("/chat");
-  };
+    await deleteChat(id)
+    router.push("/chat")
+  }
 
   const handleRetry = () => {
-    const lastUser = [...messages].reverse().find((m) => m.role === "user");
-    if (lastUser) editMessage(lastUser.message_index, lastUser.content);
-  };
+    const lastUser = [...messages].reverse().find((m) => m.role === "user")
+    if (lastUser) editMessage(lastUser.message_index, lastUser.content)
+  }
 
   const handleSend = async (content: string, image_urls?: string[]) => {
-    const result = await sendMessage(content, image_urls);
+    const result = await sendMessage(content, image_urls)
 
-    // Update guest message count after send
     if (result.success && typeof window !== "undefined") {
       const count = parseInt(
         localStorage.getItem("guest_message_count") || "0",
         10,
-      );
-      setGuestMessageCount(count);
+      )
+      setGuestMessageCount(count)
     }
 
-    return result;
-  };
+    return result
+  }
 
   const remainingGuestMessages = Math.max(
     0,
     GUEST_MESSAGE_LIMIT - guestMessageCount,
-  );
+  )
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-background">
       <ChatHeader
         chatId={id}
         title={chat?.title ?? null}
@@ -166,5 +160,5 @@ export default function ChatPage() {
         guestMessageLimit={GUEST_MESSAGE_LIMIT}
       />
     </div>
-  );
+  )
 }
