@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 import { User } from "@supabase/supabase-js"
 import HomeView from "@/components/chat/HomeView"
@@ -9,14 +8,15 @@ import Sidebar from "@/components/chat/Sidebar"
 import SearchModal from "@/components/chat/SearchModal"
 
 export default function Home() {
-  const router = useRouter()
-  const [user, setUser] = useState<User | null | undefined>(undefined)
+  const [user, setUser] = useState<User | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user)
+      setLoading(false)
     })
 
     const {
@@ -28,10 +28,19 @@ export default function Home() {
     return () => subscription.unsubscribe()
   }, [])
 
-  if (user === undefined) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-muted-foreground">Loading...</div>
+      </div>
+    )
+  }
+
+  // If somehow user is not authenticated (shouldn't happen due to middleware), redirect
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-muted-foreground">Redirecting to login...</div>
       </div>
     )
   }

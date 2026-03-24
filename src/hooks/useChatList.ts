@@ -3,22 +3,8 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { Chat } from "@/types"
-import {
-  GUEST_SESSION_KEY,
-  GUEST_MESSAGE_COUNT_KEY,
-} from "@/lib/constants"
 
 const PAGE_SIZE = 20
-
-function getGuestSessionId(): string {
-  if (typeof window === "undefined") return ""
-  let id = localStorage.getItem(GUEST_SESSION_KEY)
-  if (!id) {
-    id = `guest-${crypto.randomUUID()}`
-    localStorage.setItem(GUEST_SESSION_KEY, id)
-  }
-  return id
-}
 
 export function useChatList() {
   const [chats, setChats] = useState<Chat[]>([])
@@ -86,10 +72,6 @@ export function useChatList() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event) => {
-      if (event === "SIGNED_IN") {
-        localStorage.removeItem(GUEST_MESSAGE_COUNT_KEY)
-        localStorage.removeItem(GUEST_SESSION_KEY)
-      }
       if (event === "SIGNED_OUT") {
         setChats([])
         cursorRef.current = null
@@ -105,7 +87,6 @@ export function useChatList() {
         "postgres_changes",
         { event: "*", schema: "public", table: "chats" },
         () => {
-          // Only refetch from start when chats change
           fetchChats()
         },
       )
@@ -125,17 +106,17 @@ export function useChatList() {
       data: { user },
     } = await supabase.auth.getUser()
 
-    setCreatingChat(true)
-    let guest_session_id: string | undefined
     if (!user) {
-      guest_session_id = getGuestSessionId()
+      return { id: null, error: "Must be logged in to create a chat" }
     }
+
+    setCreatingChat(true)
 
     try {
       const res = await fetch("/api/chat/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ guest_session_id }),
+        body: JSON.stringify({}),
       })
 
       if (!res.ok) {

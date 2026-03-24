@@ -6,7 +6,7 @@ import { ALLOWED_MODELS } from "@/lib/constants"
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, model_id, chat_id, is_guest } = await req.json()
+    const { messages, model_id, chat_id } = await req.json()
 
     if (!messages || !model_id) {
       return NextResponse.json(
@@ -25,15 +25,14 @@ export async function POST(req: NextRequest) {
 
     const supabase = createClient()
 
-    // For authenticated users, verify ownership of the chat
-    if (!is_guest && chat_id) {
-      const { data: { user } } = await supabase.auth.getUser()
+    // Require authentication
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
 
-      if (!user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-      }
-
-      // Verify the chat belongs to this user
+    // Verify ownership of the chat
+    if (chat_id) {
       const { data: chat, error: chatError } = await supabase
         .from("chats")
         .select("user_id")
@@ -47,8 +46,8 @@ export async function POST(req: NextRequest) {
 
     let history = messages
 
-    // For authenticated users, fetch full message history from DB
-    if (!is_guest && chat_id) {
+    // Fetch full message history from DB
+    if (chat_id) {
       const { data: dbMessages } = await supabase
         .from("messages")
         .select("role, content")
@@ -97,8 +96,8 @@ export async function POST(req: NextRequest) {
             if (!line.startsWith("data: ")) continue
             const data = line.slice(6).trim()
             if (data === "[DONE]") {
-              // Save assistant message to DB only for authenticated users
-              if (!is_guest && chat_id) {
+              // Save assistant message to DB
+              if (chat_id) {
                 const { count } = await supabase
                   .from("messages")
                   .select("id", { count: "exact", head: true })

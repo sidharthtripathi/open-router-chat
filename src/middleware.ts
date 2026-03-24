@@ -19,36 +19,48 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
-  // Root path
+  // Create supabase server client to check auth
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            req.cookies.set(name, value)
+          })
+          const response = NextResponse.next()
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options)
+          })
+        },
+      },
+    }
+  )
+
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Root path - require authentication
   if (pathname === "/") {
+    if (!user) {
+      return NextResponse.redirect(new URL("/login", req.url))
+    }
     return NextResponse.next()
   }
 
-  // /chat/* routes — validate session but let client handle redirect
+  // /chat/* routes — require authentication and valid chat id
   if (pathname.startsWith("/chat")) {
-    // Create a response and refresh the session
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return req.cookies.getAll()
-          },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              req.cookies.set(name, value)
-            })
-            const response = NextResponse.next()
-            cookiesToSet.forEach(({ name, value, options }) => {
-              response.cookies.set(name, value, options)
-            })
-          },
-        },
-      }
-    )
+    if (!user) {
+      return NextResponse.redirect(new URL("/login", req.url))
+    }
 
-    await supabase.auth.getUser()
+    // /chat without an id should redirect to home
+    if (pathname === "/chat") {
+      return NextResponse.redirect(new URL("/", req.url))
+    }
 
     return NextResponse.next()
   }

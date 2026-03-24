@@ -7,9 +7,9 @@ export async function POST(req: NextRequest) {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
-    // If not authenticated, guest chats in-memory only — no DB record
+    // Must be authenticated
     if (!user) {
-      return NextResponse.json({ id: null, guest: true })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const { data, error } = await supabase

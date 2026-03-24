@@ -3,31 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { Message } from "@/types";
-import {
-  GUEST_MESSAGE_COUNT_KEY,
-  GUEST_MESSAGE_LIMIT,
-  DEFAULT_MODEL,
-} from "@/lib/constants";
+import { DEFAULT_MODEL } from "@/lib/constants";
 
-export function useChat(chatId: string | null, initialModel: string, isGuest: boolean = false) {
+export function useChat(chatId: string | null, initialModel: string) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [model, setModel] = useState(initialModel);
   const [streaming, setStreaming] = useState(false);
   const [streamContent, setStreamContent] = useState("");
-  const [guestMessageCount, setGuestMessageCount] = useState(0);
   const [generatedTitle, setGeneratedTitle] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (isGuest) {
-      // Clear guest message count on mount for fresh experience each tab open
-      if (typeof window !== "undefined") {
-        localStorage.removeItem(GUEST_MESSAGE_COUNT_KEY);
-      }
-      setGuestMessageCount(0);
-      return;
-    }
-
     if (!chatId) return;
 
     supabase
@@ -36,55 +22,25 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
       .eq("chat_id", chatId)
       .order("message_index", { ascending: true })
       .then(({ data }) => setMessages(data ?? []));
-  }, [chatId, isGuest]);
+  }, [chatId]);
 
-  // Check if user can send a message (guests have limited messages)
+  // Check if user is authenticated
   const canSendMessage = useCallback(async (): Promise<{
     allowed: boolean;
     reason?: string;
   }> => {
-    if (isGuest) {
-      const currentCount = parseInt(
-        localStorage.getItem(GUEST_MESSAGE_COUNT_KEY) || "0",
-        10,
-      );
-      if (currentCount >= GUEST_MESSAGE_LIMIT) {
-        return {
-          allowed: false,
-          reason: `Guest limit reached. You've used ${GUEST_MESSAGE_LIMIT} messages. Please sign up to continue.`,
-        };
-      }
-      return { allowed: true };
-    }
-
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    // Authenticated users can always send
-    if (user) return { allowed: true };
-
-    // Check guest message limit
-    const currentCount = parseInt(
-      localStorage.getItem(GUEST_MESSAGE_COUNT_KEY) || "0",
-      10,
-    );
-    if (currentCount >= GUEST_MESSAGE_LIMIT) {
+    if (!user) {
       return {
         allowed: false,
-        reason: `Guest limit reached. You've used ${GUEST_MESSAGE_LIMIT} messages. Please sign up to continue.`,
+        reason: "Must be logged in to send messages",
       };
     }
 
     return { allowed: true };
-  }, [isGuest]);
-
-  // Increment guest message count when they send a message
-  const incrementGuestMessageCount = useCallback(() => {
-    const newCount =
-      parseInt(localStorage.getItem(GUEST_MESSAGE_COUNT_KEY) || "0", 10) + 1;
-    localStorage.setItem(GUEST_MESSAGE_COUNT_KEY, newCount.toString());
-    setGuestMessageCount(newCount);
   }, []);
 
   // Reset chat (clear all messages)
@@ -102,14 +58,14 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
       if (!content.trim() || streaming)
         return { success: false, error: "Invalid message", restore: false };
 
-      // Check if user can send (guest limit check)
+      // Check if user can send (must be authenticated)
       const { allowed, reason } = await canSendMessage();
       if (!allowed) return { success: false, error: reason, restore: false };
 
-      // Create user message (in-memory for guests)
+      // Create user message
       const userMsg: Message = {
-        id: `guest-${Date.now()}-${Math.random()}`,
-        chat_id: chatId ?? "guest",
+        id: `temp-${Date.now()}-${Math.random()}`,
+        chat_id: chatId ?? "new",
         role: "user",
         content,
         model_id: null,
@@ -120,11 +76,6 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
 
       // Add user message to state immediately
       setMessages((prev) => [...prev, userMsg]);
-
-      // Increment guest message count
-      if (isGuest) {
-        incrementGuestMessageCount();
-      }
 
       setStreaming(true);
       setStreamContent("");
@@ -142,7 +93,6 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
             })),
             model_id: model,
             chat_id: chatId,
-            is_guest: isGuest,
           }),
           signal: abortRef.current.signal,
         });
@@ -177,10 +127,10 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
           }
         }
 
-        // Create assistant message (in-memory for guests)
+        // Create assistant message
         const assistantMsg: Message = {
-          id: `guest-${Date.now()}-${Math.random()}`,
-          chat_id: chatId ?? "guest",
+          id: `temp-${Date.now()}-${Math.random()}`,
+          chat_id: chatId ?? "new",
           role: "assistant",
           content: full,
           model_id: model,
@@ -190,8 +140,8 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
-        // Generate title after first assistant response (only for authenticated)
-        if (!isGuest && messages.length === 0) {
+        // Generate title after first assistant response
+        if (messages.length === 0 && chatId) {
           try {
             const res = await fetch("/api/chat/generate-title", {
               method: "POST",
@@ -230,9 +180,7 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
       messages,
       model,
       streaming,
-      isGuest,
       canSendMessage,
-      incrementGuestMessageCount,
     ],
   );
 
@@ -259,7 +207,6 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
           })),
           model_id: model,
           chat_id: chatId,
-          is_guest: isGuest,
         }),
         signal: abortRef.current.signal,
       });
@@ -288,8 +235,8 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
         }
       }
 
-      // Create assistant message (in-memory for guests, in DB for authenticated)
-      if (!isGuest && chatId) {
+      // Create assistant message in DB
+      if (chatId) {
         const assistantMsg = {
           chat_id: chatId,
           role: "assistant",
@@ -301,8 +248,8 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
       }
 
       const assistantMsg: Message = {
-        id: `guest-${Date.now()}-${Math.random()}`,
-        chat_id: chatId ?? "guest",
+        id: `temp-${Date.now()}-${Math.random()}`,
+        chat_id: chatId ?? "new",
         role: "assistant",
         content: full,
         model_id: model,
@@ -313,7 +260,7 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
       setMessages((prev) => [...prev, assistantMsg]);
 
       // Generate title after first assistant response
-      if (!isGuest && chatId && messages.length === 1) {
+      if (chatId && messages.length === 1) {
         try {
           const res = await fetch("/api/chat/generate-title", {
             method: "POST",
@@ -338,7 +285,7 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
       setStreaming(false);
       setStreamContent("");
     }
-  }, [chatId, messages, model, streaming, isGuest]);
+  }, [chatId, messages, model, streaming]);
 
   const stopStreaming = () => {
     abortRef.current?.abort();
@@ -348,24 +295,18 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
 
   const editMessage = useCallback(
     async (messageIndex: number, newContent: string) => {
-      // For guests, just filter messages up to that index
-      if (isGuest) {
-        const trimmed = messages.filter((m) => m.message_index < messageIndex);
-        setMessages(trimmed);
-        await sendMessage(newContent);
-        return;
-      }
-
       // Delete all messages from this index onward
       const toDelete = messages.filter((m) => m.message_index >= messageIndex);
       for (const m of toDelete) {
-        await supabase.from("messages").delete().eq("id", m.id);
+        if (m.id && !m.id.startsWith("temp-")) {
+          await supabase.from("messages").delete().eq("id", m.id);
+        }
       }
       const trimmed = messages.filter((m) => m.message_index < messageIndex);
       setMessages(trimmed);
       await sendMessage(newContent);
     },
-    [messages, sendMessage, isGuest],
+    [messages, sendMessage],
   );
 
   return {
@@ -380,11 +321,5 @@ export function useChat(chatId: string | null, initialModel: string, isGuest: bo
     editMessage,
     resetChat,
     startStreamingForExistingMessages,
-    guestMessageCount,
-    guestMessageLimit: GUEST_MESSAGE_LIMIT,
-    remainingGuestMessages: Math.max(
-      0,
-      GUEST_MESSAGE_LIMIT - guestMessageCount,
-    ),
   };
 }

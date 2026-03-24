@@ -13,7 +13,6 @@ import InputArea from "@/components/chat/InputArea"
 import { ChatPageSkeleton } from "@/components/ui/skeleton"
 import { Chat } from "@/types"
 import { User } from "@supabase/supabase-js"
-import { GUEST_MESSAGE_LIMIT } from "@/lib/constants"
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>()
@@ -23,7 +22,6 @@ export default function ChatPage() {
   const [user, setUser] = useState<User | null>(null)
   const { models } = useModels()
   const { deleteChat, renameChat } = useChatList()
-  const [guestMessageCount, setGuestMessageCount] = useState(0)
   const [streamStarted, setStreamStarted] = useState(false)
 
   const {
@@ -73,14 +71,6 @@ export default function ChatPage() {
       )
       .subscribe()
 
-    if (typeof window !== "undefined") {
-      const count = parseInt(
-        localStorage.getItem("guest_message_count") || "0",
-        10,
-      )
-      setGuestMessageCount(count)
-    }
-
     return () => {
       supabase.removeChannel(channel)
     }
@@ -108,7 +98,7 @@ export default function ChatPage() {
 
   const handleDelete = async () => {
     await deleteChat(id)
-    router.push("/chat")
+    router.push("/")
   }
 
   const handleRetry = () => {
@@ -118,22 +108,8 @@ export default function ChatPage() {
 
   const handleSend = async (content: string, image_urls?: string[]) => {
     const result = await sendMessage(content, image_urls)
-
-    if (result.success && typeof window !== "undefined") {
-      const count = parseInt(
-        localStorage.getItem("guest_message_count") || "0",
-        10,
-      )
-      setGuestMessageCount(count)
-    }
-
     return result
   }
-
-  const remainingGuestMessages = Math.max(
-    0,
-    GUEST_MESSAGE_LIMIT - guestMessageCount,
-  )
 
   if (chatLoading) {
     return <ChatPageSkeleton />
@@ -166,8 +142,8 @@ export default function ChatPage() {
         onStop={stopStreaming}
         chatId={id}
         isVisionModel={visionCapable}
-        guestMessagesRemaining={remainingGuestMessages}
-        guestMessageLimit={GUEST_MESSAGE_LIMIT}
+        guestMessagesRemaining={999}
+        guestMessageLimit={999}
       />
     </div>
   )

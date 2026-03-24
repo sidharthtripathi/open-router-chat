@@ -1,28 +1,18 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import ModelSelector from "./ModelSelector"
 import PublishModal from "./PublishModal"
 import { User } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MoreHorizontal, Trash2, Globe, Pencil } from "lucide-react"
-import { motion } from "framer-motion"
+import { MoreHorizontal, Trash2, Globe } from "lucide-react"
 
 interface Props {
   chatId: string
@@ -43,23 +33,13 @@ export default function ChatHeader({
   onRename,
   onDelete,
 }: Props) {
-  const router = useRouter()
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleText, setTitleText] = useState(title ?? "New Chat")
   const [showPublish, setShowPublish] = useState(false)
-  const [showLoginDialog, setShowLoginDialog] = useState(false)
 
   const handleTitleConfirm = () => {
     onRename(titleText)
     setEditingTitle(false)
-  }
-
-  const handlePublishClick = () => {
-    if (!user) {
-      setShowLoginDialog(true)
-    } else {
-      setShowPublish(true)
-    }
   }
 
   return (
@@ -88,7 +68,7 @@ export default function ChatHeader({
         <div className="flex items-center gap-2 shrink-0">
           <ModelSelector value={model} onChange={onModelChange} />
 
-          <Button onClick={handlePublishClick} variant="outline" size="sm">
+          <Button onClick={() => setShowPublish(true)} variant="outline" size="sm">
             <Globe className="h-4 w-4 mr-1" />
             Publish
           </Button>
@@ -116,23 +96,6 @@ export default function ChatHeader({
           onClose={() => setShowPublish(false)}
         />
       )}
-
-      <Dialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Sign in to publish</DialogTitle>
-            <DialogDescription>
-              You need to sign in to publish your chat.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowLoginDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={() => router.push("/login")}>Sign In</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   )
 }

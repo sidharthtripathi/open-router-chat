@@ -1,8 +1,7 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { useChat } from "@/hooks/useChat"
 import { useModels } from "@/hooks/useModels"
 import MessageThread from "./MessageThread"
 import InputArea from "./InputArea"
@@ -11,13 +10,11 @@ import { isVisionCapable } from "@/lib/openrouter/models"
 import { supabase } from "@/lib/supabase/client"
 import { useChatList } from "@/hooks/useChatList"
 import { User } from "@supabase/supabase-js"
-import { GUEST_MESSAGE_LIMIT } from "@/lib/constants"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/ThemeToggle"
-import { Orbit } from "lucide-react"
 
 interface Props {
-  user: User | null
+  user: User
 }
 
 const promptSuggestions = [
@@ -31,26 +28,11 @@ export default function HomeView({ user }: Props) {
   const router = useRouter()
   const { models } = useModels()
   const { createChat } = useChatList()
-  const [localUser, setLocalUser] = useState(user)
-
-  const isGuest = !localUser
-
-  const {
-    messages,
-    model,
-    setModel,
-    streaming,
-    streamContent,
-    sendMessage,
-    stopStreaming,
-    editMessage,
-    resetChat,
-    remainingGuestMessages,
-  } = useChat(null, "openai/gpt-4o-mini", isGuest)
-
-  useEffect(() => {
-    setLocalUser(user)
-  }, [user])
+  const [messages, setMessages] = useState<any[]>([])
+  const [model, setModel] = useState("openai/gpt-4o-mini")
+  const [streaming, setStreaming] = useState(false)
+  const [streamContent, setStreamContent] = useState("")
+  const [sending, setSending] = useState(false)
 
   const visionCapable = models.some(
     (m) => m.id === model && isVisionCapable(m),
@@ -58,45 +40,107 @@ export default function HomeView({ user }: Props) {
 
   const handleSend = useCallback(
     async (content: string, image_urls?: string[]) => {
-      if (localUser && messages.length === 0) {
-        const result = await createChat()
-        if (!result.id) {
-          return { success: false, error: "Failed to create chat", restore: true }
-        }
+      if (sending) return { success: false, error: "Already sending", restore: false }
+      setSending(true)
 
-        const userMsg = {
-          chat_id: result.id,
-          role: "user",
-          content,
-          image_urls: image_urls ?? null,
-          message_index: 0,
-        }
-
-        const { error: msgError } = await supabase
-          .from("messages")
-          .insert(userMsg)
-
-        if (msgError) {
-          return { success: false, error: msgError.message, restore: true }
-        }
-
-        router.push(`/chat/${result.id}`)
-        return { success: true }
+      // Create a new chat first
+      const result = await createChat()
+      if (!result.id) {
+        setSending(false)
+        return { success: false, error: "Failed to create chat", restore: true }
       }
 
-      const result = await sendMessage(content, image_urls)
-      return result
+      const chatId = result.id
+
+      // Add user message to state for UI feedback
+      const userMsg = {
+        id: `temp-${Date.now()}`,
+        chat_id: chatId,
+        role: "user",
+        content,
+        model_id: null,
+        image_urls: image_urls ?? null,
+        message_index: 0,
+        created_at: new Date().toISOString(),
+      }
+      setMessages([userMsg])
+      setStreaming(true)
+      setStreamContent("")
+
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: [{ role: "user", content }],
+            model_id: model,
+            chat_id: chatId,
+          }),
+        })
+
+        if (!res.ok) {
+          const errorData = await res.json()
+          setStreaming(false)
+          setMessages([])
+          setSending(false)
+          return { success: false, error: errorData.error || "Failed to get response", restore: true }
+        }
+
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        let full = ""
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          const text = decoder.decode(value, { stream: true })
+          const lines = text.split("\n")
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue
+            try {
+              const parsed = JSON.parse(line.slice(6))
+              full += parsed.content ?? ""
+              setStreamContent(full)
+            } catch {}
+          }
+        }
+
+        // Add assistant message to state
+        const assistantMsg = {
+          id: `temp-${Date.now()}-assistant`,
+          chat_id: chatId,
+          role: "assistant",
+          content: full,
+          model_id: model,
+          image_urls: null,
+          message_index: 1,
+          created_at: new Date().toISOString(),
+        }
+        setMessages([userMsg, assistantMsg])
+        setStreaming(false)
+        setStreamContent("")
+
+        // Redirect to the chat page - title will be generated there
+        router.push(`/chat/${chatId}`)
+      } catch (err: any) {
+        setStreaming(false)
+        setStreamContent("")
+        setMessages([])
+        setSending(false)
+        if (err.name !== "AbortError") {
+          return { success: false, error: "An error occurred", restore: true }
+        }
+        return { success: false, error: "Cancelled", restore: true }
+      }
+
+      setSending(false)
+      return { success: true }
     },
-    [localUser, messages.length, createChat, router, sendMessage],
+    [model, createChat, router, sending],
   )
 
   const handleRetry = () => {
-    const lastUser = [...messages].reverse().find((m) => m.role === "user")
-    if (lastUser) editMessage(lastUser.message_index, lastUser.content)
-  }
-
-  const handleNewChat = () => {
-    resetChat()
+    // Not applicable on home view
   }
 
   return (
@@ -105,19 +149,12 @@ export default function HomeView({ user }: Props) {
       <div className="flex items-center justify-between px-6 py-3 border-b border-border/40 bg-background/80 backdrop-blur-md z-10 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <h1 className="text-sm font-semibold truncate text-foreground/80">
-            {messages.length === 0 ? "New Chat" : "Chat"}
+            New Chat
           </h1>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
           <ModelSelector value={model} onChange={setModel} />
-
-          {localUser && (
-            <Button onClick={handleNewChat} variant="outline" size="sm">
-              New Chat
-            </Button>
-          )}
-
           <ThemeToggle />
         </div>
       </div>
@@ -140,8 +177,9 @@ export default function HomeView({ user }: Props) {
               {promptSuggestions.map((suggestion, i) => (
                 <button
                   key={i}
-                  onClick={() => handleSend(suggestion)}
-                  className="text-left px-4 py-3.5 rounded-xl border border-border/60 bg-secondary/40 hover:bg-secondary/80 hover:border-border transition-all duration-200 group"
+                  onClick={() => !sending && handleSend(suggestion)}
+                  disabled={sending}
+                  className="text-left px-4 py-3.5 rounded-xl border border-border/60 bg-secondary/40 hover:bg-secondary/80 hover:border-border transition-all duration-200 group disabled:opacity-50"
                 >
                   <span className="text-sm font-medium text-foreground/90 group-hover:text-foreground">
                     {suggestion}
@@ -157,7 +195,7 @@ export default function HomeView({ user }: Props) {
             streamContent={streamContent}
             streaming={streaming}
             currentModel={model}
-            onEdit={editMessage}
+            onEdit={() => {}}
             onRetry={handleRetry}
           />
         )}
@@ -168,11 +206,11 @@ export default function HomeView({ user }: Props) {
         <InputArea
           onSend={handleSend}
           streaming={streaming}
-          onStop={stopStreaming}
+          onStop={() => {}}
           chatId="home"
           isVisionModel={visionCapable}
-          guestMessagesRemaining={remainingGuestMessages}
-          guestMessageLimit={GUEST_MESSAGE_LIMIT}
+          guestMessagesRemaining={999}
+          guestMessageLimit={999}
         />
       </div>
     </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useChatList } from "@/hooks/useChatList"
 import { groupChatsByDate } from "@/lib/utils"
@@ -15,7 +15,6 @@ import {
   Search,
   Plus,
   LogOut,
-  LogIn,
   PanelLeft,
 } from "lucide-react"
 import { motion } from "framer-motion"
@@ -35,7 +34,6 @@ export default function Sidebar({ collapsed, onToggle, onOpenSearch }: SidebarPr
   const { chats, loading, loadingMore, hasMore, creatingChat, fetchMoreChats, createChat, deleteChat, togglePin, renameChat } =
     useChatList()
   const [user, setUser] = useState<User | null>(null)
-  const [guestLimitError, setGuestLimitError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -59,16 +57,13 @@ export default function Sidebar({ collapsed, onToggle, onOpenSearch }: SidebarPr
   const handleNewChat = async () => {
     const result = await createChat()
     if (result.id) {
-      setGuestLimitError(null)
       router.push(`/chat/${result.id}`)
-    } else if (result.error) {
-      setGuestLimitError(result.error)
     }
   }
 
   const handleDelete = async (id: string) => {
     await deleteChat(id)
-    if (activeChatId === id) router.push("/chat")
+    if (activeChatId === id) router.push("/")
   }
 
   const pinnedChats = chats.filter((c) => c.is_pinned)
@@ -114,29 +109,6 @@ export default function Sidebar({ collapsed, onToggle, onOpenSearch }: SidebarPr
       {/* Expanded Content */}
       {!collapsed && (
         <div className="flex flex-col flex-1">
-            {/* Guest limit error */}
-            {guestLimitError && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mx-3 mb-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg"
-              >
-                <p className="text-sm text-destructive mb-2">
-                  {guestLimitError}
-                </p>
-                <Button
-                  onClick={() => {
-                    setGuestLimitError(null)
-                    router.push("/login")
-                  }}
-                  variant="link"
-                  className="text-primary h-auto p-0"
-                >
-                  Sign up for unlimited chats
-                </Button>
-              </motion.div>
-            )}
-
             {/* Search */}
             <div className="px-3 pb-2">
               <button
@@ -253,13 +225,9 @@ export default function Sidebar({ collapsed, onToggle, onOpenSearch }: SidebarPr
                   </Button>
                 </div>
               ) : (
-                <Button
-                  onClick={() => router.push("/login")}
-                  className="w-full"
-                  variant="default"
-                >
-                  Sign In
-                </Button>
+                <div className="text-sm text-muted-foreground text-center">
+                  Redirecting...
+                </div>
               )}
             </div>
           </div>
@@ -288,7 +256,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSearch }: SidebarPr
               <Plus className="h-5 w-5" />
             </Button>
 
-            {/* User Avatar / Sign In */}
+            {/* User Avatar / Logout */}
             <div className="mt-auto">
               {user ? (
                 <Button
@@ -304,15 +272,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSearch }: SidebarPr
                   </Avatar>
                 </Button>
               ) : (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                  onClick={() => router.push("/login")}
-                  title="Sign In"
-                >
-                  <LogIn className="h-5 w-5" />
-                </Button>
+                <div className="h-10 w-10" />
               )}
             </div>
         </div>

@@ -24,16 +24,13 @@ export default function InputArea({
   onSend,
   streaming,
   onStop,
-  guestMessagesRemaining = Infinity,
-  guestMessageLimit = Infinity,
+  guestMessagesRemaining = 999,
+  guestMessageLimit = 999,
 }: Props) {
   const [text, setText] = useState("")
   const [error, setError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const pendingTextRef = useRef<string>("")
-
-  const isGuest = !Number.isFinite(guestMessagesRemaining)
-  const showGuestLimit = isGuest && guestMessageLimit < Infinity
 
   useEffect(() => {
     const ta = textareaRef.current
@@ -86,33 +83,6 @@ export default function InputArea({
           className="mb-3 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-center"
         >
           <p className="text-sm text-destructive">{error}</p>
-          {!isGuest && error.includes("Guest limit") && (
-            <a
-              href="/login"
-              className="text-sm text-primary hover:underline mt-1 inline-block"
-            >
-              Sign up to continue chatting
-            </a>
-          )}
-        </motion.div>
-      )}
-
-      {showGuestLimit && guestMessagesRemaining <= 3 && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-3 p-3 bg-secondary/50 border border-border rounded-lg text-center"
-        >
-          <p className="text-sm text-secondary-foreground">
-            {guestMessagesRemaining === 0
-              ? "You've reached the guest message limit."
-              : `You have ${guestMessagesRemaining} message${
-                  guestMessagesRemaining === 1 ? "" : "s"
-                } remaining as a guest.`}{" "}
-            <a href="/login" className="text-primary hover:underline">
-              Sign up for unlimited messages
-            </a>
-          </p>
         </motion.div>
       )}
 
@@ -123,14 +93,9 @@ export default function InputArea({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={
-            showGuestLimit && guestMessagesRemaining === 0
-              ? "Guest limit reached..."
-              : "Ask anything..."
-          }
+          placeholder="Ask anything..."
           rows={1}
-          disabled={showGuestLimit && guestMessagesRemaining === 0}
-          className="flex-1 bg-transparent resize-none outline-none border-none focus-visible:ring-0 text-foreground placeholder:text-muted-foreground py-2 disabled:opacity-50 text-base shadow-none"
+          className="flex-1 bg-transparent resize-none outline-none border-none focus-visible:ring-0 text-foreground placeholder:text-muted-foreground py-2 text-base shadow-none"
           style={{ maxHeight: 200 }}
         />
 
@@ -150,9 +115,7 @@ export default function InputArea({
           ) : (
             <Button
               onClick={handleSend}
-              disabled={
-                isDisabled || (showGuestLimit && guestMessagesRemaining === 0)
-              }
+              disabled={isDisabled}
               size="icon"
               className="rounded-full w-9 h-9 bg-foreground text-background hover:bg-foreground/90 shrink-0 transition-opacity"
             >
@@ -161,14 +124,6 @@ export default function InputArea({
           )}
         </div>
       </div>
-
-      {showGuestLimit && (
-        <div className="mt-3 flex justify-center">
-          <span className="text-xs text-muted-foreground">
-            {guestMessagesRemaining} of {guestMessageLimit} messages remaining
-          </span>
-        </div>
-      )}
     </div>
   )
 }
