@@ -6,7 +6,7 @@ import { ALLOWED_MODELS } from "@/lib/constants"
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, model_id, chat_id } = await req.json()
+    const { messages, model_id, chat_id, save_user_message } = await req.json()
 
     if (!messages || !model_id) {
       return NextResponse.json(
@@ -57,6 +57,29 @@ export async function POST(req: NextRequest) {
       history = truncateMessages([...(dbMessages ?? []), ...messages], 6000)
     } else {
       history = truncateMessages(messages, 6000)
+    }
+
+    // If this is a new chat (chat_id provided) and save_user_message flag is set,
+    // save the user message to DB first
+    if (chat_id && save_user_message && messages.length > 0 && messages[0].role === "user") {
+      const { count } = await supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("chat_id", chat_id)
+
+      await supabase.from("messages").insert({
+        chat_id,
+        role: "user",
+        content: messages[0].content,
+        model_id: null,
+        message_index: count ?? 0,
+      })
+
+      // Update chat timestamp
+      await supabase
+        .from("chats")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", chat_id)
     }
 
     const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
@@ -116,6 +139,16 @@ export async function POST(req: NextRequest) {
                   .from("chats")
                   .update({ model_id, updated_at: new Date().toISOString() })
                   .eq("id", chat_id)
+
+                // Generate title if this is the first message pair (count was 0 before we inserted)
+                if (count === 0) {
+                  // Fire and forget title generation
+                  fetch(`${req.nextUrl.origin}/api/chat/generate-title`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ chat_id, first_message: messages[0].content }),
+                  }).catch(console.error)
+                }
               }
 
               controller.close()

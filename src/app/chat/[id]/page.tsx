@@ -1,6 +1,6 @@
 "use client"
 
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { useChat } from "@/hooks/useChat"
@@ -17,12 +17,16 @@ import { User } from "@supabase/supabase-js"
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [chat, setChat] = useState<Chat | null>(null)
   const [chatLoading, setChatLoading] = useState(true)
   const [user, setUser] = useState<User | null>(null)
   const { models } = useModels()
   const { deleteChat, renameChat } = useChatList()
   const [streamStarted, setStreamStarted] = useState(false)
+
+  // Check if we need to start streaming (coming from home page with a new message)
+  const needsStreaming = searchParams.get("needs_streaming") === "true"
 
   const {
     messages,
@@ -83,14 +87,16 @@ export default function ChatPage() {
   }, [generatedTitle, chat])
 
   useEffect(() => {
-    if (streamStarted || messages.length === 0 || !id) return
+    // Only trigger streaming if we came from home page with needs_streaming=true
+    // and we haven't already started streaming
+    if (!needsStreaming || streamStarted || messages.length === 0 || !id) return
 
     const lastMsg = messages[messages.length - 1]
     if (lastMsg.role === "user" && !streaming) {
       setStreamStarted(true)
       startStreamingForExistingMessages()
     }
-  }, [messages, streaming, id, streamStarted, startStreamingForExistingMessages])
+  }, [needsStreaming, messages, streaming, id, streamStarted, startStreamingForExistingMessages])
 
   const visionCapable = models.some(
     (m) => m.id === model && isVisionCapable(m),

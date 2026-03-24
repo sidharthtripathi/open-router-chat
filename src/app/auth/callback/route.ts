@@ -18,7 +18,6 @@ export async function GET(req: NextRequest) {
             return req.cookies.getAll()
           },
           setAll(cookiesToSet) {
-            console.log('[AUTH_CALLBACK] Setting cookies:', cookiesToSet.map(c => ({ name: c.name, options: c.options })))
             cookiesToSet.forEach(({ name, value, options }) => {
               req.cookies.set(name, value)
               response.cookies.set(name, value, options)
@@ -30,13 +29,9 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
-    console.log('[AUTH_CALLBACK] Code exchange result:', { error, hasSession: !!data.session, session: data.session ? { user: data.session.user, expiresAt: data.session.expires_at } : null })
-
     if (error) {
       console.error('Auth callback error:', error)
     }
-  } else {
-    console.log('[AUTH_CALLBACK] No code in URL, searchParams:', Object.fromEntries(url.searchParams))
   }
 
   return response

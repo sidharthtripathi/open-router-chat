@@ -64,10 +64,10 @@ export default function HomeView({ user }: Props) {
         created_at: new Date().toISOString(),
       }
       setMessages([userMsg])
-      setStreaming(true)
-      setStreamContent("")
 
       try {
+        // Start the streaming API call - we need to at least start it before redirecting
+        // The user message will be saved by the API before streaming starts
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -75,56 +75,28 @@ export default function HomeView({ user }: Props) {
             messages: [{ role: "user", content }],
             model_id: model,
             chat_id: chatId,
+            save_user_message: true,
           }),
         })
 
         if (!res.ok) {
           const errorData = await res.json()
-          setStreaming(false)
           setMessages([])
           setSending(false)
           return { success: false, error: errorData.error || "Failed to get response", restore: true }
         }
 
+        // Stream the response briefly to ensure user message is saved
         const reader = res.body!.getReader()
         const decoder = new TextDecoder()
-        let full = ""
 
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          const text = decoder.decode(value, { stream: true })
-          const lines = text.split("\n")
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue
-            try {
-              const parsed = JSON.parse(line.slice(6))
-              full += parsed.content ?? ""
-              setStreamContent(full)
-            } catch {}
-          }
-        }
+        // Read just the first chunk (to ensure the request was received)
+        const { done } = await reader.read()
+        reader.releaseLock()
 
-        // Add assistant message to state
-        const assistantMsg = {
-          id: `temp-${Date.now()}-assistant`,
-          chat_id: chatId,
-          role: "assistant",
-          content: full,
-          model_id: model,
-          image_urls: null,
-          message_index: 1,
-          created_at: new Date().toISOString(),
-        }
-        setMessages([userMsg, assistantMsg])
-        setStreaming(false)
-        setStreamContent("")
-
-        // Redirect to the chat page - title will be generated there
-        router.push(`/chat/${chatId}`)
+        // Now redirect - user message is saved, ChatPage will continue streaming
+        router.push(`/chat/${chatId}?needs_streaming=true`)
       } catch (err: any) {
-        setStreaming(false)
-        setStreamContent("")
         setMessages([])
         setSending(false)
         if (err.name !== "AbortError") {
